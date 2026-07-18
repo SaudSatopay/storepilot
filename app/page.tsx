@@ -576,7 +576,7 @@ export default function Home() {
           </section>
         </section>
 
-        <footer className="mt-5">
+        <footer className="pointer-events-none mt-5">
           <p className="font-data text-center text-[11px] uppercase tracking-[0.14em] text-[var(--ink-faint)]">
             StorePilot · GPT-5.6 tool calling over live store data · Demo store:
             {" "}
