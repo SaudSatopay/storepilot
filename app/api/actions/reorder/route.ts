@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { composeSupplierMessage } from "@/lib/tools";
 import { generateMorningBrief } from "@/lib/brief/generate";
+import { withDbRetry } from "@/lib/db-retry";
 import { friendlyErrorMessage, logServerError } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -37,7 +38,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await composeSupplierMessage({ product_ids: productIds });
+    const ids = productIds;
+    const result = await withDbRetry(() =>
+      composeSupplierMessage({ product_ids: ids }),
+    );
 
     return NextResponse.json(result);
   } catch (error) {

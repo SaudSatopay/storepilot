@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { withDbRetry } from "@/lib/db-retry";
 import {
   getOpenAIClient,
   hasUsableOpenAIKey,
@@ -18,23 +19,25 @@ const briefCache = new Map<string, MorningBrief>();
 export async function generateMorningBrief(options: {
   fresh?: boolean;
 }): Promise<MorningBrief> {
-  const [storeProfile, products, sales] = await Promise.all([
-    prisma.storeProfile.findFirst(),
-    prisma.product.findMany({
-      include: {
-        supplier: { select: { name: true } },
-        stockLevel: { select: { qty: true } },
-      },
-    }),
-    prisma.sale.findMany({
-      select: {
-        productId: true,
-        qty: true,
-        unitPrice: true,
-        soldAt: true,
-      },
-    }),
-  ]);
+  const [storeProfile, products, sales] = await withDbRetry(() =>
+    Promise.all([
+      prisma.storeProfile.findFirst(),
+      prisma.product.findMany({
+        include: {
+          supplier: { select: { name: true } },
+          stockLevel: { select: { qty: true } },
+        },
+      }),
+      prisma.sale.findMany({
+        select: {
+          productId: true,
+          qty: true,
+          unitPrice: true,
+          soldAt: true,
+        },
+      }),
+    ]),
+  );
 
   const storeName = storeProfile?.name ?? "Demo store";
   const analysisInput = {

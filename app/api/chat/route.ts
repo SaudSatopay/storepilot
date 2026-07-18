@@ -6,6 +6,7 @@ import type {
   ResponseInputItem,
 } from "openai/resources/responses/responses";
 import { z } from "zod";
+import { withDbRetry } from "@/lib/db-retry";
 import { friendlyErrorMessage, logServerError } from "@/lib/errors";
 import {
   getOpenAIClient,
@@ -203,7 +204,10 @@ async function executeToolCall(
 
   const args = call.arguments ? JSON.parse(call.arguments) : {};
   send({ type: "status", message: `Running ${call.name}` });
-  const result = await toolExecutors[call.name](args);
+  const execute = toolExecutors[call.name] as (
+    input: unknown,
+  ) => Promise<unknown>;
+  const result = await withDbRetry(() => execute(args));
   send({
     type: "evidence",
     toolName: call.name,

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { draftPromo } from "@/lib/tools";
 import { generateMorningBrief } from "@/lib/brief/generate";
+import { withDbRetry } from "@/lib/db-retry";
 import { friendlyErrorMessage, logServerError } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -39,11 +40,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await draftPromo({
-      product_ids: productIds,
-      discount_percent: parsed.data.discount_percent ?? 15,
-      channel: parsed.data.channel ?? "whatsapp",
-    });
+    const ids = productIds;
+    const result = await withDbRetry(() =>
+      draftPromo({
+        product_ids: ids,
+        discount_percent: parsed.data.discount_percent ?? 15,
+        channel: parsed.data.channel ?? "whatsapp",
+      }),
+    );
 
     return NextResponse.json(result);
   } catch (error) {
