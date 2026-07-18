@@ -12,6 +12,7 @@ out
 
 # production
 build
+.data
 
 # misc
 .DS_Store
@@ -23,6 +24,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 dev-server*.log
+db-local*.log
 
 # env
 .env

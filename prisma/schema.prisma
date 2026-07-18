@@ -10,6 +10,64 @@ datasource db {
 model StoreProfile {
   id        String   @id @default(cuid())
   name      String
+  mode      String   @default("demo")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@map("store_profiles")
+}
+
+model Supplier {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  phone     String
+  products  Product[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("suppliers")
+}
+
+model Product {
+  id           String      @id @default(cuid())
+  sku          String      @unique
+  name         String
+  category     String
+  cost         Decimal     @db.Decimal(10, 2)
+  price        Decimal     @db.Decimal(10, 2)
+  reorderPoint Int         @map("reorder_point")
+  supplierId   String      @map("supplier_id")
+  supplier     Supplier    @relation(fields: [supplierId], references: [id])
+  sales        Sale[]
+  stockLevel   StockLevel?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([category])
+  @@index([supplierId])
+  @@map("products")
+}
+
+model Sale {
+  id        String   @id @default(cuid())
+  productId String   @map("product_id")
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  qty       Int
+  unitPrice Decimal  @map("unit_price") @db.Decimal(10, 2)
+  soldAt    DateTime @map("sold_at")
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+  @@index([soldAt])
+  @@map("sales")
+}
+
+model StockLevel {
+  id        String   @id @default(cuid())
+  productId String   @unique @map("product_id")
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  qty       Int
+  updatedAt DateTime @map("updated_at")
+
+  @@map("stock_levels")
 }

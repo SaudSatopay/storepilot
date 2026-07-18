@@ -15,7 +15,8 @@ StorePilot is an AI store manager for small retailers. This scaffold starts the 
 ```bash
 pnpm install
 cp .env.example .env
-pnpm prisma generate
+pnpm db:local
+pnpm db:seed
 pnpm dev
 ```
 
@@ -24,3 +25,5 @@ Open [http://localhost:3000](http://localhost:3000) to view the scaffold.
 ## Environment
 
 Set `DATABASE_URL` to a Postgres connection string and `OPENAI_API_KEY` to your OpenAI API key. `OPENAI_MODEL` defaults to `gpt-5.6`.
+
+For local development without Docker, `pnpm db:local` starts a PGlite Postgres-compatible server on port `5433`. The seed script creates a 90-day demo electronics store with 120 products, suppliers, sales, and stock levels. Check the database with [http://localhost:3000/api/health](http://localhost:3000/api/health).
