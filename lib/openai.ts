@@ -15,3 +15,8 @@ export function getOpenAIClient() {
 
   return client;
 }
+
+export function hasUsableOpenAIKey() {
+  const key = process.env.OPENAI_API_KEY;
+  return Boolean(key && !key.includes("your-key-here") && !key.startsWith("sk-your"));
+}

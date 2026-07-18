@@ -6,7 +6,12 @@ import type {
   ResponseInputItem,
 } from "openai/resources/responses/responses";
 import { z } from "zod";
-import { storePilotModel, getOpenAIClient } from "@/lib/openai";
+import { friendlyErrorMessage, logServerError } from "@/lib/errors";
+import {
+  getOpenAIClient,
+  hasUsableOpenAIKey,
+  storePilotModel,
+} from "@/lib/openai";
 import {
   forecastStockouts,
   getInventory,
@@ -87,8 +92,14 @@ export async function POST(request: Request) {
 
         await runOpenAIChat(recentMessages, send);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Chat failed.";
-        send({ type: "error", message });
+        logServerError("chat", error);
+        send({
+          type: "error",
+          message: friendlyErrorMessage(
+            error,
+            "StorePilot hit an error answering that. Try again in a moment.",
+          ),
+        });
       } finally {
         controller.close();
       }
@@ -274,11 +285,6 @@ function getOpenAITools(): FunctionTool[] {
     parameters: z.toJSONSchema(tool.inputSchema) as Record<string, unknown>,
     strict: false,
   }));
-}
-
-function hasUsableOpenAIKey() {
-  const key = process.env.OPENAI_API_KEY;
-  return Boolean(key && !key.includes("your-key-here") && !key.startsWith("sk-your"));
 }
 
 function isStorePilotTool(name: string): name is StorePilotToolName {
