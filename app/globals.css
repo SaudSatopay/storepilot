@@ -1,11 +1,23 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f4f6f1;
-  --foreground: #17211b;
-  --muted: #66736b;
-  --line: #d7ded5;
-  --panel: #ffffff;
+  --paper: #f3f1ea;
+  --paper-raised: #fbfaf5;
+  --paper-deep: #ebe8dd;
+  --ink: #161d18;
+  --ink-soft: #46534b;
+  --ink-faint: #6d7a70;
+  --line: #d9d5c6;
+  --line-strong: #a9a58f;
+  --forest: #176043;
+  --forest-deep: #114a33;
+  --forest-tint: #e3ece2;
+  --amber: #8a5b0b;
+  --amber-tint: #f4ead3;
+  --rose: #9f1239;
+  --rose-tint: #f7e3e6;
+  --shadow-resting: 0 1px 2px rgb(22 29 24 / 0.07);
+  --shadow-hover: 0 12px 28px rgb(22 29 24 / 0.12);
 }
 
 * {
@@ -19,23 +31,52 @@ html {
 body {
   min-height: 100%;
   margin: 0;
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui), "Helvetica Neue", Arial, sans-serif;
+  font-feature-settings: "ss01" on;
+  -webkit-font-smoothing: antialiased;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
 }
 
 button,
-input {
+input,
+textarea,
+select {
   font: inherit;
 }
 
 ::selection {
-  background: #c8f2d8;
+  background: #cdeeda;
 }
 
-:root {
-  --shadow-resting: 0 1px 2px rgb(23 33 27 / 0.06);
-  --shadow-hover: 0 10px 24px rgb(23 33 27 / 0.1);
+.font-display {
+  font-family: var(--font-display), Georgia, "Times New Roman", serif;
+  letter-spacing: -0.01em;
+}
+
+.font-data {
+  font-family: var(--font-data), ui-monospace, "Cascadia Mono", monospace;
+}
+
+.masthead-rule {
+  height: 6px;
+  border-top: 2px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+}
+
+.hairline {
+  border-color: var(--line);
 }
 
 .shadow-resting {
@@ -47,7 +88,6 @@ input {
     box-shadow 160ms ease,
     transform 160ms ease,
     background-color 160ms ease,
-    color 160ms ease,
     border-color 160ms ease;
 }
 
@@ -78,7 +118,7 @@ input {
 .skeleton-shimmer {
   position: relative;
   overflow: hidden;
-  background: #e9eee8;
+  background: var(--paper-deep);
 }
 
 .shimmer-line::after,
@@ -89,7 +129,7 @@ input {
   background: linear-gradient(
     90deg,
     transparent,
-    rgb(255 255 255 / 0.74),
+    rgb(255 255 255 / 0.72),
     transparent
   );
   transform: translateX(-100%);
@@ -102,6 +142,14 @@ input {
 
 .action-button[aria-pressed="true"] {
   transform: translateY(1px);
+}
+
+.modal-backdrop {
+  animation: backdrop-in 180ms ease both;
+}
+
+.modal-panel {
+  animation: modal-in 240ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
 
 @keyframes fade-slide-in {
@@ -149,6 +197,28 @@ input {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 

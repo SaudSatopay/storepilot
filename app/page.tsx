@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -19,17 +20,13 @@ import {
   RefreshCcw,
   Send,
   Sparkles,
-  TrendingDown,
   TrendingUp,
 } from "lucide-react";
-
-type BriefItem = {
-  type: "summary" | "stockout" | "anomaly" | "opportunity";
-  title: string;
-  body: string;
-  severity: "low" | "medium" | "high";
-  metric: string;
-};
+import {
+  ActionModal,
+  type ActionModalRequest,
+} from "@/app/components/ActionModal";
+import type { BriefItem, BriefSeverity, MorningBrief } from "@/lib/brief/types";
 
 type ChatRole = "manager" | "pilot";
 
@@ -61,87 +58,37 @@ type HealthResponse = {
     sales: number;
   };
   salesDays?: number;
-  message?: string;
 };
-
-type ActionId = "send" | "reorder" | "promo";
-
-const briefItems: BriefItem[] = [
-  {
-    type: "summary",
-    title: "Sales beat the weekday trend",
-    body: "Yesterday closed 12% above the 30-day weekday average, led by accessories and laptop chargers.",
-    severity: "low",
-    metric: "+12%",
-  },
-  {
-    type: "stockout",
-    title: "USB-C chargers need a reorder",
-    body: "At the current 7-day velocity, Galaxy USB-C chargers will run out by Friday.",
-    severity: "high",
-    metric: "3 days",
-  },
-  {
-    type: "anomaly",
-    title: "Accessory spike needs a quick check",
-    body: "Thursday accessory sales were 42% above the recent trend. Check whether a local bulk buyer drove the jump.",
-    severity: "medium",
-    metric: "+42%",
-  },
-  {
-    type: "opportunity",
-    title: "Bundle slow wireless mice",
-    body: "Wireless mice are down 18% week over week while keyboard stock is healthy. Test a weekend bundle.",
-    severity: "medium",
-    metric: "-18%",
-  },
-];
 
 const initialMessages: ChatMessage[] = [
   {
-    id: "initial-manager",
-    role: "manager",
-    body: "What needs my attention today?",
-    evidence: [],
-  },
-  {
     id: "initial-pilot",
     role: "pilot",
-    body: "Three things: reorder USB-C chargers, inspect the accessory spike, and move slow wireless mice with a weekend bundle. I used current stock, 7-day velocity, and 90 days of demo sales.",
-    evidence: [
-      {
-        toolName: "mock",
-        label: "Demo evidence",
-        chips: [
-          "USB-C Chargers: 14 in stock",
-          "7-day velocity: 5.1 per day",
-          "Accessory sales: +42% vs trend",
-        ],
-      },
-    ],
+    body: "Morning. Your brief is on the left, built from the store's own sales and stock. Ask me anything about products, suppliers, or pace, and I will answer with the numbers.",
+    evidence: [],
   },
 ];
 
 const severityTone = {
   low: {
-    accent: "bg-emerald-500",
-    icon: "bg-emerald-50 text-emerald-700",
-    metric: "bg-emerald-50 text-emerald-800",
-    priority: "text-emerald-800",
+    accent: "bg-[var(--forest)]",
+    icon: "bg-[var(--forest-tint)] text-[var(--forest)]",
+    metric: "text-[var(--forest)]",
+    stamp: "border-[var(--forest)] text-[var(--forest)]",
   },
   medium: {
-    accent: "bg-amber-500",
-    icon: "bg-amber-50 text-amber-700",
-    metric: "bg-amber-50 text-amber-800",
-    priority: "text-amber-800",
+    accent: "bg-[var(--amber)]",
+    icon: "bg-[var(--amber-tint)] text-[var(--amber)]",
+    metric: "text-[var(--amber)]",
+    stamp: "border-[var(--amber)] text-[var(--amber)]",
   },
   high: {
-    accent: "bg-rose-500",
-    icon: "bg-rose-50 text-rose-700",
-    metric: "bg-rose-50 text-rose-800",
-    priority: "text-rose-800",
+    accent: "bg-[var(--rose)]",
+    icon: "bg-[var(--rose-tint)] text-[var(--rose)]",
+    metric: "text-[var(--rose)]",
+    stamp: "border-[var(--rose)] text-[var(--rose)]",
   },
-} satisfies Record<BriefItem["severity"], Record<string, string>>;
+} satisfies Record<BriefSeverity, Record<string, string>>;
 
 const typeIcons = {
   summary: TrendingUp,
@@ -150,50 +97,23 @@ const typeIcons = {
   opportunity: Sparkles,
 } satisfies Record<BriefItem["type"], typeof TrendingUp>;
 
-const actionCards = [
-  {
-    id: "reorder",
-    title: "Draft reorder",
-    body: "Message suppliers for the products most likely to run out this week.",
-    question: "Draft a reorder message for the products about to stock out this week",
-    Icon: Clipboard,
-    ToneIcon: ArrowUpRight,
-    buttonClass: "bg-[#1b6b4a] text-white hover:bg-[#15573c]",
-  },
-  {
-    id: "promo",
-    title: "Draft promo",
-    body: "Create weekend copy for slow movers with healthy stock.",
-    question: "Draft a weekend promo for my slow movers",
-    Icon: Sparkles,
-    ToneIcon: TrendingDown,
-    buttonClass: "bg-[#17211b] text-white hover:bg-[#26372e]",
-  },
-] satisfies Array<{
-  id: Exclude<ActionId, "send">;
-  title: string;
-  body: string;
-  question: string;
-  Icon: typeof Clipboard;
-  ToneIcon: typeof ArrowUpRight;
-  buttonClass: string;
-}>;
-
 const numberFormat = new Intl.NumberFormat("en-US");
 const focusRing =
-  "outline-none focus-visible:ring-2 focus-visible:ring-[#1b6b4a] focus-visible:ring-offset-2 focus-visible:ring-offset-[#f4f6f1]";
+  "outline-none focus-visible:ring-2 focus-visible:ring-[var(--forest)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]";
 
 export default function Home() {
+  const [brief, setBrief] = useState<MorningBrief | null>(null);
+  const [briefError, setBriefError] = useState<string | null>(null);
+  const [isBriefLoading, setIsBriefLoading] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState("What should I reorder this week?");
   const [status, setStatus] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [activeAction, setActiveAction] = useState<ActionId | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [healthError, setHealthError] = useState<string | null>(null);
-  const [isBriefReady, setIsBriefReady] = useState(false);
+  const [modalRequest, setModalRequest] = useState<ActionModalRequest | null>(
+    null,
+  );
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
-  const briefTimerRef = useRef<number | null>(null);
 
   const currentDate = useMemo(
     () =>
@@ -205,72 +125,64 @@ export default function Home() {
     [],
   );
 
+  const loadBrief = useCallback(async (fresh: boolean) => {
+    setIsBriefLoading(true);
+    setBriefError(null);
+
+    try {
+      const response = await fetch(`/api/brief${fresh ? "?fresh=1" : ""}`);
+      const body = (await response.json()) as {
+        brief?: MorningBrief;
+        error?: string;
+      };
+
+      if (!response.ok || !body.brief) {
+        throw new Error(body.error ?? "Could not load the brief.");
+      }
+
+      setBrief(body.brief);
+    } catch (error) {
+      setBriefError(
+        error instanceof Error ? error.message : "Could not load the brief.",
+      );
+    } finally {
+      setIsBriefLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadBrief(false);
+  }, [loadBrief]);
+
   useEffect(() => {
     const controller = new AbortController();
 
-    async function loadHealth() {
-      try {
-        const response = await fetch("/api/health", {
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error("Data check failed");
+    fetch("/api/health", { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: HealthResponse | null) => {
+        if (payload) {
+          setHealth(payload);
         }
-
-        const payload = (await response.json()) as HealthResponse;
-        setHealth(payload);
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setHealthError(
-            error instanceof Error ? error.message : "Data check failed",
-          );
-        }
-      }
-    }
-
-    loadHealth();
+      })
+      .catch(() => undefined);
 
     return () => controller.abort();
   }, []);
 
   useEffect(() => {
-    startBriefReveal();
-
-    return () => {
-      if (briefTimerRef.current) {
-        window.clearTimeout(briefTimerRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
     const scrollArea = chatScrollRef.current;
 
-    if (!scrollArea) {
-      return;
+    if (scrollArea) {
+      scrollArea.scrollTop = scrollArea.scrollHeight;
     }
-
-    scrollArea.scrollTop = scrollArea.scrollHeight;
   }, [messages, status, isStreaming]);
-
-  function startBriefReveal() {
-    if (briefTimerRef.current) {
-      window.clearTimeout(briefTimerRef.current);
-    }
-
-    setIsBriefReady(false);
-    briefTimerRef.current = window.setTimeout(() => {
-      setIsBriefReady(true);
-    }, 180);
-  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void submitQuestion(input, "send");
+    void submitQuestion(input);
   }
 
-  async function submitQuestion(question: string, action: ActionId = "send") {
+  async function submitQuestion(question: string) {
     const trimmedQuestion = question.trim();
 
     if (!trimmedQuestion || isStreaming) {
@@ -303,14 +215,11 @@ export default function Home() {
     setInput("");
     setStatus("Opening StorePilot tools");
     setIsStreaming(true);
-    setActiveAction(action);
 
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: requestMessages }),
       });
 
@@ -328,7 +237,6 @@ export default function Home() {
     } finally {
       finishAssistantTurn(assistantMessage.id, "idle");
       setIsStreaming(false);
-      setActiveAction(null);
     }
   }
 
@@ -342,6 +250,7 @@ export default function Home() {
 
     while (true) {
       const { done, value } = await reader.read();
+
       if (done) {
         break;
       }
@@ -379,11 +288,23 @@ export default function Home() {
     }
 
     if (event.type === "evidence") {
-      attachEvidence(assistantId, {
-        toolName: event.toolName,
-        label: event.label,
-        chips: event.chips,
-      });
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === assistantId
+            ? {
+                ...message,
+                evidence: [
+                  ...message.evidence,
+                  {
+                    toolName: event.toolName,
+                    label: event.label,
+                    chips: event.chips,
+                  },
+                ],
+              }
+            : message,
+        ),
+      );
       return false;
     }
 
@@ -395,10 +316,9 @@ export default function Home() {
 
     if (event.type === "error") {
       setStatus(null);
-      appendAssistantText(assistantId, event.message);
+      appendAssistantText(assistantId, ` ${event.message}`);
       finishAssistantTurn(assistantId, "error");
       setIsStreaming(false);
-      setActiveAction(null);
       return true;
     }
 
@@ -406,7 +326,6 @@ export default function Home() {
       setStatus(null);
       finishAssistantTurn(assistantId, "idle");
       setIsStreaming(false);
-      setActiveAction(null);
       return true;
     }
 
@@ -417,23 +336,7 @@ export default function Home() {
     setMessages((current) =>
       current.map((message) =>
         message.id === assistantId
-          ? {
-              ...message,
-              body: `${message.body}${text}`,
-            }
-          : message,
-      ),
-    );
-  }
-
-  function attachEvidence(assistantId: string, group: EvidenceGroup) {
-    setMessages((current) =>
-      current.map((message) =>
-        message.id === assistantId
-          ? {
-              ...message,
-              evidence: [...message.evidence, group],
-            }
+          ? { ...message, body: `${message.body}${text}` }
           : message,
       ),
     );
@@ -459,94 +362,141 @@ export default function Home() {
     chatScrollRef.current?.scrollTo({ top: 0 });
   }
 
-  const healthLabel = formatHealthLabel(health, healthError);
+  const healthLabel = formatHealthLabel(health);
+  const priorityTone = severityTone[brief?.priority ?? "low"];
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#f4f6f1] text-[#17211b]">
-      <div className="mx-auto flex min-h-screen w-full max-w-[1440px] flex-col gap-4 px-4 py-4 sm:px-6">
-        <header className="flex flex-col gap-4 border-b border-[#d7ded5] pb-4 sm:flex-row sm:items-center sm:justify-between">
+    <main className="min-h-screen overflow-x-hidden">
+      <div className="mx-auto flex min-h-screen w-full max-w-[1440px] flex-col px-4 pb-6 pt-5 sm:px-6">
+        <header className="flex flex-col gap-4 pb-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-[#17211b] text-sm font-bold text-white">
-              SP
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-[var(--ink)] text-white">
+              <span className="font-display text-lg font-bold">SP</span>
             </div>
             <div className="min-w-0">
-              <h1 className="text-xl font-semibold leading-6 text-[#17211b]">
+              <h1 className="font-display text-[32px] font-bold leading-9 tracking-tight">
                 StorePilot
               </h1>
-              <p className="mt-1 text-sm leading-5 text-[#526057]">
-                Daily operations desk
+              <p className="font-data mt-0.5 text-xs uppercase tracking-[0.16em] text-[var(--ink-faint)]">
+                The daily operations desk
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#d7ded5] bg-white px-3 text-sm font-medium text-[#34443a]">
-              <CalendarDays className="h-4 w-4 text-[#1b6b4a]" />
+            <span className="inline-flex h-10 items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--paper-raised)] px-3 text-sm font-medium text-[var(--ink-soft)]">
+              <CalendarDays className="h-4 w-4 text-[var(--forest)]" />
               {currentDate}
             </span>
-            <span
-              aria-live="polite"
-              className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#d7ded5] bg-white px-3 text-sm font-medium tabular-nums text-[#34443a]"
-            >
-              <Database className="h-4 w-4 text-[#1b6b4a]" />
+            <span className="font-data inline-flex h-10 items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--paper-raised)] px-3 text-xs tabular-nums text-[var(--ink-soft)]">
+              <Database className="h-4 w-4 text-[var(--forest)]" />
               {healthLabel}
             </span>
             <button
-              className={`inline-flex h-10 items-center gap-2 rounded-lg bg-[#1b6b4a] px-3 text-sm font-semibold text-white transition hover:bg-[#15573c] active:translate-y-px disabled:cursor-not-allowed disabled:bg-[#90a399] ${focusRing}`}
-              onClick={startBriefReveal}
+              className={`inline-flex h-10 items-center gap-2 rounded-md bg-[var(--forest)] px-3.5 text-sm font-semibold text-white transition hover:bg-[var(--forest-deep)] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`}
+              disabled={isBriefLoading}
+              onClick={() => void loadBrief(true)}
               title="Regenerate morning brief"
               type="button"
             >
-              <RefreshCcw className="h-4 w-4" />
+              {isBriefLoading ? (
+                <LoaderCircle className="spin-icon h-4 w-4" />
+              ) : (
+                <RefreshCcw className="h-4 w-4" />
+              )}
               Regenerate
             </button>
           </div>
         </header>
 
-        <section className="grid min-w-0 flex-1 gap-4 lg:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.1fr)]">
-          <aside className="flex min-h-[620px] min-w-0 flex-col rounded-lg border border-[#d7ded5] bg-white shadow-resting lg:min-h-[calc(100vh-112px)]">
-            <div className="border-b border-[#d7ded5] px-4 py-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase leading-4 text-[#66736b]">
-                    Morning Brief
-                  </p>
-                  <h2 className="mt-1 text-[28px] font-semibold leading-8 text-[#17211b]">
-                    Generated for today
-                  </h2>
-                </div>
-                <div className="rounded-lg border border-[#d7ded5] px-3 py-2 text-right shadow-resting">
-                  <p className="text-xs leading-4 text-[#66736b]">Priority</p>
-                  <p className="mt-1 text-sm font-semibold leading-5 tabular-nums text-[#9f1239]">
-                    High
-                  </p>
-                </div>
+        <div className="masthead-rule" />
+
+        <section className="mt-4 grid min-w-0 flex-1 gap-4 lg:grid-cols-[minmax(340px,0.94fr)_minmax(0,1.06fr)]">
+          <aside className="flex min-w-0 flex-col rounded-lg border border-[var(--line)] bg-[var(--paper-raised)] shadow-resting">
+            <div className="border-b border-[var(--line)] px-5 pb-4 pt-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-data text-xs font-medium uppercase tracking-[0.16em] text-[var(--ink-faint)]">
+                  Morning Brief
+                  {brief ? ` · Data through ${brief.asOfLabel}` : ""}
+                </p>
+                <span className="flex-1" />
+                {brief ? (
+                  <>
+                    <span
+                      className={`font-data rounded-sm border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${priorityTone.stamp}`}
+                    >
+                      {brief.priority} priority
+                    </span>
+                    <span className="font-data rounded-sm border border-[var(--line-strong)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-soft)]">
+                      {brief.mode === "model" ? "Written by GPT-5.6" : "Local analysis"}
+                    </span>
+                  </>
+                ) : null}
               </div>
+              {isBriefLoading && !brief ? (
+                <div className="skeleton-shimmer mt-3 h-10 w-4/5 rounded-md" />
+              ) : (
+                <h2 className="font-display mt-2 text-[30px] font-bold leading-[38px] tracking-tight sm:text-[34px] sm:leading-[42px]">
+                  {briefError
+                    ? "The brief hit a snag."
+                    : brief?.headline ?? "All quiet this morning."}
+                </h2>
+              )}
             </div>
 
             <div className="grid gap-3 p-4">
-              {isBriefReady
-                ? briefItems.map((item, index) => (
-                    <BriefCard item={item} index={index} key={item.title} />
-                  ))
-                : Array.from({ length: 4 }).map((_, index) => (
+              {isBriefLoading && !brief
+                ? Array.from({ length: 4 }).map((_, index) => (
                     <BriefSkeleton index={index} key={index} />
-                  ))}
+                  ))
+                : null}
+
+              {!isBriefLoading && briefError ? (
+                <div className="rounded-md border border-[var(--rose)] bg-[var(--rose-tint)] p-4">
+                  <p className="text-sm leading-6 text-[var(--rose)]">{briefError}</p>
+                  <button
+                    className={`mt-3 inline-flex h-9 items-center gap-2 rounded-md bg-[var(--rose)] px-3 text-sm font-semibold text-white ${focusRing}`}
+                    onClick={() => void loadBrief(false)}
+                    type="button"
+                  >
+                    <RefreshCcw className="h-4 w-4" />
+                    Retry
+                  </button>
+                </div>
+              ) : null}
+
+              {brief && !briefError
+                ? brief.items.map((item, index) => (
+                    <BriefCard
+                      index={index}
+                      item={item}
+                      key={item.id}
+                      onAction={(request) => setModalRequest(request)}
+                    />
+                  ))
+                : null}
+
+              {brief && !briefError && brief.items.length === 0 ? (
+                <div className="rounded-md border border-[var(--line)] bg-white p-5 text-sm leading-6 text-[var(--ink-soft)]">
+                  No stories today. Import sales data or run the seed to give the
+                  desk something to report.
+                </div>
+              ) : null}
             </div>
           </aside>
 
-          <section className="flex h-[720px] min-w-0 flex-col rounded-lg border border-[#d7ded5] bg-white shadow-resting lg:h-auto lg:min-h-[calc(100vh-112px)]">
-            <div className="flex items-center justify-between gap-3 border-b border-[#d7ded5] px-4 py-4">
+          <section className="flex h-[720px] min-w-0 flex-col rounded-lg border border-[var(--line)] bg-[var(--paper-raised)] shadow-resting lg:h-auto">
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-5 pb-4 pt-5">
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase leading-4 text-[#66736b]">
-                  Chat
-                </p>
-                <h2 className="mt-1 text-[28px] font-semibold leading-8 text-[#17211b]">
+                <p className="font-data text-xs font-medium uppercase tracking-[0.16em] text-[var(--ink-faint)]">
                   Ask StorePilot
+                </p>
+                <h2 className="font-display mt-2 text-[30px] font-bold leading-[38px] tracking-tight">
+                  The desk
                 </h2>
               </div>
               <button
-                className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border border-[#d7ded5] px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#eef3ee] active:translate-y-px ${focusRing}`}
+                className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-md border border-[var(--line)] px-3 text-sm font-semibold text-[var(--ink-soft)] transition hover:bg-[var(--paper)] active:translate-y-px ${focusRing}`}
                 onClick={scrollToHistoryStart}
                 title="Jump to chat history"
                 type="button"
@@ -560,47 +510,39 @@ export default function Home() {
               <div
                 aria-busy={isStreaming}
                 aria-live="polite"
-                className="min-h-[280px] flex-1 overflow-y-auto pr-1"
+                className="min-h-[260px] flex-1 overflow-y-auto pr-1"
                 ref={chatScrollRef}
               >
                 <div className="grid gap-4">
-                  {messages.length > 0 ? (
-                    messages.map((message, index) => (
-                      <ChatBubble
-                        isActiveStreaming={
-                          isStreaming &&
-                          message.state === "streaming" &&
-                          index === messages.length - 1
-                        }
-                        key={message.id}
-                        message={message}
-                        status={status}
-                      />
-                    ))
-                  ) : (
-                    <div className="rounded-lg border border-[#d7ded5] bg-[#fbfcfa] p-6 text-center shadow-resting">
-                      <p className="text-base font-semibold leading-6 text-[#17211b]">
-                        Ask about stock, sales, suppliers, or promos.
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-[#526057]">
-                        StorePilot will answer with the numbers behind the call.
-                      </p>
-                    </div>
-                  )}
+                  {messages.map((message, index) => (
+                    <ChatBubble
+                      isActiveStreaming={
+                        isStreaming &&
+                        message.state === "streaming" &&
+                        index === messages.length - 1
+                      }
+                      key={message.id}
+                      message={message}
+                      status={status}
+                    />
+                  ))}
                 </div>
               </div>
 
               <div className="grid gap-3">
                 <div className="grid gap-3 sm:grid-cols-2">
-                  {actionCards.map((card) => (
-                    <ActionCard
-                      activeAction={activeAction}
-                      card={card}
-                      isStreaming={isStreaming}
-                      key={card.id}
-                      onSubmit={submitQuestion}
-                    />
-                  ))}
+                  <ActionStub
+                    body="Suppliers, quantities, and phone numbers for the products about to run out."
+                    icon={Clipboard}
+                    label="Draft reorder"
+                    onOpen={() => setModalRequest({ kind: "reorder" })}
+                  />
+                  <ActionStub
+                    body="Weekend copy for slow movers with stock worth freeing up."
+                    icon={Sparkles}
+                    label="Draft promo"
+                    onOpen={() => setModalRequest({ kind: "promo" })}
+                  />
                 </div>
 
                 <form className="flex min-w-0 gap-2" onSubmit={handleSubmit}>
@@ -608,22 +550,22 @@ export default function Home() {
                     Ask StorePilot
                   </label>
                   <input
-                    className={`h-11 min-w-0 flex-1 rounded-lg border border-[#d7ded5] bg-white px-3 text-sm leading-5 text-[#17211b] transition placeholder:text-[#66736b] disabled:cursor-not-allowed disabled:bg-[#f4f6f1] ${focusRing}`}
+                    className={`h-11 min-w-0 flex-1 rounded-md border border-[var(--line)] bg-white px-3 text-sm leading-5 text-[var(--ink)] transition placeholder:text-[var(--ink-faint)] disabled:cursor-not-allowed disabled:bg-[var(--paper)] ${focusRing}`}
                     disabled={isStreaming}
                     id="chat-input"
                     onChange={(event) => setInput(event.target.value)}
-                    placeholder="Ask StorePilot"
+                    placeholder="Ask about stock, sales, or suppliers"
                     type="text"
                     value={input}
                   />
                   <button
-                    className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#1b6b4a] text-white transition hover:bg-[#15573c] active:translate-y-px disabled:cursor-not-allowed disabled:bg-[#90a399] ${focusRing}`}
+                    className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-[var(--forest)] text-white transition hover:bg-[var(--forest-deep)] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`}
                     disabled={isStreaming || input.trim().length === 0}
                     title="Send message"
                     type="submit"
                   >
                     {isStreaming ? (
-                      <LoaderCircle className="h-4 w-4 spin-icon" />
+                      <LoaderCircle className="spin-icon h-4 w-4" />
                     ) : (
                       <Send className="h-4 w-4" />
                     )}
@@ -633,39 +575,86 @@ export default function Home() {
             </div>
           </section>
         </section>
+
+        <footer className="mt-5">
+          <p className="font-data text-center text-[11px] uppercase tracking-[0.14em] text-[var(--ink-faint)]">
+            StorePilot · GPT-5.6 tool calling over live store data · Demo store:
+            {" "}
+            {brief?.storeName ?? "Cedar Electronics"}
+          </p>
+        </footer>
       </div>
+
+      <ActionModal
+        onClose={() => setModalRequest(null)}
+        request={modalRequest}
+      />
     </main>
   );
 }
 
-function BriefCard({ item, index }: { item: BriefItem; index: number }) {
+function BriefCard({
+  item,
+  index,
+  onAction,
+}: {
+  item: BriefItem;
+  index: number;
+  onAction: (request: ActionModalRequest) => void;
+}) {
   const Icon = typeIcons[item.type];
   const tone = severityTone[item.severity];
 
   return (
     <article
-      className="brief-card-in hover-lift relative min-h-[132px] overflow-hidden rounded-lg border border-[#d7ded5] bg-[#fbfcfa] p-4 pl-5 shadow-resting"
+      className="brief-card-in hover-lift relative overflow-hidden rounded-md border border-[var(--line)] bg-white p-4 pl-5 shadow-resting"
       style={{ animationDelay: `${index * 70}ms` }}
     >
       <div className={`absolute left-0 top-0 h-full w-[3px] ${tone.accent}`} />
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-3.5">
         <div
-          className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${tone.icon}`}
+          className={`grid h-9 w-9 shrink-0 place-items-center rounded-md ${tone.icon}`}
         >
           <Icon className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <h3 className="text-base font-semibold leading-6 text-[#17211b]">
+          <div className="flex items-start justify-between gap-4">
+            <h3 className="font-display text-xl font-semibold leading-7">
               {item.title}
             </h3>
-            <span
-              className={`ml-auto shrink-0 rounded-lg px-2 py-1 text-xs font-semibold leading-4 tabular-nums ${tone.metric}`}
-            >
-              {item.metric}
-            </span>
+            <div className="shrink-0 text-right">
+              <p
+                className={`font-data text-lg font-bold leading-6 tabular-nums ${tone.metric}`}
+              >
+                {item.metric}
+              </p>
+              <p className="font-data mt-0.5 text-[10px] uppercase tracking-[0.1em] text-[var(--ink-faint)]">
+                {item.metricLabel}
+              </p>
+            </div>
           </div>
-          <p className="mt-2 text-sm leading-6 text-[#526057]">{item.body}</p>
+          <p className="mt-2 text-sm leading-6 text-[var(--ink-soft)]">
+            {item.body}
+          </p>
+          {item.action ? (
+            <button
+              className={`mt-3 inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-semibold text-white transition active:translate-y-px ${
+                item.action.kind === "reorder"
+                  ? "bg-[var(--forest)] hover:bg-[var(--forest-deep)]"
+                  : "bg-[var(--ink)] hover:bg-[#2a352d]"
+              } ${focusRing}`}
+              onClick={() =>
+                onAction({
+                  kind: item.action?.kind ?? "reorder",
+                  productIds: item.action?.productIds,
+                })
+              }
+              type="button"
+            >
+              {item.action.label}
+              <ArrowUpRight className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
       </div>
     </article>
@@ -676,18 +665,18 @@ function BriefSkeleton({ index }: { index: number }) {
   return (
     <article
       aria-hidden="true"
-      className="brief-card-in min-h-[132px] rounded-lg border border-[#d7ded5] bg-[#fbfcfa] p-4 shadow-resting"
+      className="brief-card-in min-h-[120px] rounded-md border border-[var(--line)] bg-white p-4"
       style={{ animationDelay: `${index * 55}ms` }}
     >
       <div className="flex items-start gap-3">
-        <div className="skeleton-shimmer h-9 w-9 shrink-0 rounded-lg" />
+        <div className="skeleton-shimmer h-9 w-9 shrink-0 rounded-md" />
         <div className="grid flex-1 gap-3">
           <div className="flex items-start justify-between gap-3">
-            <div className="skeleton-shimmer h-5 w-3/5 rounded-lg" />
-            <div className="skeleton-shimmer h-6 w-16 rounded-lg" />
+            <div className="skeleton-shimmer h-5 w-3/5 rounded-md" />
+            <div className="skeleton-shimmer h-6 w-14 rounded-md" />
           </div>
-          <div className="skeleton-shimmer h-4 w-full rounded-lg" />
-          <div className="skeleton-shimmer h-4 w-4/5 rounded-lg" />
+          <div className="skeleton-shimmer h-4 w-full rounded-md" />
+          <div className="skeleton-shimmer h-4 w-4/5 rounded-md" />
         </div>
       </div>
     </article>
@@ -713,14 +702,14 @@ function ChatBubble({
           isManager ? "items-end" : "items-start"
         }`}
       >
-        <span className="px-1 text-xs font-semibold uppercase leading-4 text-[#66736b]">
+        <span className="font-data px-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-faint)]">
           {isManager ? "You" : "StorePilot"}
         </span>
         <div
-          className={`min-h-12 rounded-lg px-4 py-3 text-sm leading-6 shadow-resting ${
+          className={`min-h-12 px-4 py-3 text-sm leading-6 shadow-resting ${
             isManager
-              ? "bg-[#17211b] text-white"
-              : "border border-[#d7ded5] bg-[#fbfcfa] text-[#34443a]"
+              ? "rounded-lg rounded-br-sm bg-[var(--ink)] text-[var(--paper)]"
+              : "rounded-lg rounded-bl-sm border border-[var(--line)] bg-white text-[var(--ink-soft)]"
           }`}
         >
           {message.body ? (
@@ -732,17 +721,17 @@ function ChatBubble({
           {isActiveStreaming && status && !message.body ? (
             <div className="grid gap-2">
               <span className="sr-only">{status}</span>
-              <div className="shimmer-line h-3 w-40 rounded-lg" />
-              <div className="shimmer-line h-3 w-28 rounded-lg" />
+              <div className="shimmer-line h-3 w-40 rounded-md" />
+              <div className="shimmer-line h-3 w-28 rounded-md" />
             </div>
           ) : null}
           {hasEvidence ? (
             <div className="mt-3 flex flex-wrap gap-2">
-              {message.evidence.flatMap((group) =>
+              {message.evidence.flatMap((group, groupIndex) =>
                 group.chips.map((chip, chipIndex) => (
                   <span
-                    className="evidence-chip rounded-lg border border-[#d7ded5] bg-[#eef3ee] px-2 py-1 text-xs font-medium leading-4 tabular-nums text-[#34443a]"
-                    key={`${message.id}-${group.toolName}-${chip}`}
+                    className="evidence-chip font-data rounded-sm border border-[var(--line)] bg-[var(--forest-tint)] px-2 py-1 text-[11px] font-medium leading-4 tabular-nums text-[var(--forest-deep)]"
+                    key={`${message.id}-${groupIndex}-${chipIndex}`}
                     style={{ animationDelay: `${chipIndex * 55}ms` }}
                     title={group.label}
                   >
@@ -758,56 +747,43 @@ function ChatBubble({
   );
 }
 
-function ActionCard({
-  card,
-  isStreaming,
-  activeAction,
-  onSubmit,
+function ActionStub({
+  label,
+  body,
+  icon: Icon,
+  onOpen,
 }: {
-  card: (typeof actionCards)[number];
-  isStreaming: boolean;
-  activeAction: ActionId | null;
-  onSubmit: (question: string, action: ActionId) => Promise<void>;
+  label: string;
+  body: string;
+  icon: typeof Clipboard;
+  onOpen: () => void;
 }) {
-  const isActive = activeAction === card.id;
-  const Icon = card.Icon;
-  const ToneIcon = card.ToneIcon;
-
   return (
-    <article className="rounded-lg border border-[#d7ded5] bg-[#fbfcfa] p-4 shadow-resting">
+    <article className="hover-lift rounded-md border border-[var(--line)] bg-white p-4 shadow-resting">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold leading-5 text-[#17211b]">
-            {card.title}
+          <h3 className="font-display text-base font-semibold leading-6">
+            {label}
           </h3>
-          <p className="mt-1 text-sm leading-6 text-[#526057]">{card.body}</p>
+          <p className="mt-1 text-[13px] leading-5 text-[var(--ink-soft)]">
+            {body}
+          </p>
         </div>
-        <ToneIcon className="h-4 w-4 shrink-0 text-[#1b6b4a]" />
+        <ArrowUpRight className="h-4 w-4 shrink-0 text-[var(--forest)]" />
       </div>
       <button
-        aria-pressed={isActive}
-        className={`action-button mt-3 inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition active:translate-y-px disabled:cursor-not-allowed disabled:bg-[#90a399] ${card.buttonClass} ${focusRing}`}
-        disabled={isStreaming}
-        onClick={() => void onSubmit(card.question, card.id)}
-        title={card.title}
+        className={`action-button mt-3 inline-flex h-9 items-center gap-2 rounded-md bg-[var(--forest)] px-3 text-sm font-semibold text-white transition hover:bg-[var(--forest-deep)] active:translate-y-px ${focusRing}`}
+        onClick={onOpen}
         type="button"
       >
-        {isActive ? (
-          <LoaderCircle className="h-4 w-4 spin-icon" />
-        ) : (
-          <Icon className="h-4 w-4" />
-        )}
-        Draft
+        <Icon className="h-4 w-4" />
+        {label}
       </button>
     </article>
   );
 }
 
-function formatHealthLabel(health: HealthResponse | null, error: string | null) {
-  if (error) {
-    return "Data unavailable";
-  }
-
+function formatHealthLabel(health: HealthResponse | null) {
   if (!health || health.status !== "ok" || !health.counts) {
     return "Checking data";
   }
@@ -816,7 +792,7 @@ function formatHealthLabel(health: HealthResponse | null, error: string | null) 
   const sales = numberFormat.format(health.counts.sales);
   const days = numberFormat.format(health.salesDays ?? 0);
 
-  return `${products} products, ${sales} sales, ${days} days`;
+  return `${products} products · ${sales} sales · ${days} days`;
 }
 
 function createMessageId(prefix: ChatRole) {
