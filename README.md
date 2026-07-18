@@ -27,3 +27,11 @@ Open [http://localhost:3000](http://localhost:3000) to view the scaffold.
 Set `DATABASE_URL` to a Postgres connection string and `OPENAI_API_KEY` to your OpenAI API key. `OPENAI_MODEL` defaults to `gpt-5.6`.
 
 For local development without Docker, `pnpm db:local` starts a PGlite Postgres-compatible server on port `5433`. The seed script creates a 90-day demo electronics store with 120 products, suppliers, sales, and stock levels. Check the database with [http://localhost:3000/api/health](http://localhost:3000/api/health).
+
+## Tools Layer
+
+The server-side tools live in `lib/tools`: `query_sales`, `get_inventory`, `forecast_stockouts`, `compose_supplier_message`, and `draft_promo`. Inputs are validated with zod and database access goes through Prisma query builders.
+
+```bash
+pnpm test
+```
