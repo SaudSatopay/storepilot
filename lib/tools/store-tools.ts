@@ -9,10 +9,12 @@ import {
   draftPromoInputSchema,
   forecastStockoutsInputSchema,
   getInventoryInputSchema,
+  normalizeQuerySalesInput,
   querySalesInputSchema,
   type DraftPromoInput,
   type ForecastStockoutsInput,
   type GetInventoryInput,
+  type NormalizedQuerySalesInput,
   type QuerySalesInput,
 } from "@/lib/tools/schemas";
 
@@ -43,7 +45,7 @@ type SalesGroup = {
 };
 
 export async function querySales(input: unknown) {
-  const params = querySalesInputSchema.parse(input);
+  const params = normalizeQuerySalesInput(querySalesInputSchema.parse(input));
   const sales = await prisma.sale.findMany({
     where: buildSaleWhere(params),
     include: {
@@ -192,8 +194,7 @@ export async function forecastStockouts(input: unknown) {
         item.daysUntilStockout !== null &&
         item.daysUntilStockout <= params.horizon_days,
     ),
-    watchlist: forecasts.filter((item) => item.severity === "watch"),
-    all: forecasts,
+    watchlist: forecasts.filter((item) => item.severity === "watch").slice(0, 15),
   };
 }
 
@@ -334,7 +335,7 @@ type ProductFilterInput = {
   search?: string;
 };
 
-function buildSaleWhere(params: QuerySalesInput): Prisma.SaleWhereInput {
+function buildSaleWhere(params: NormalizedQuerySalesInput): Prisma.SaleWhereInput {
   const where: Prisma.SaleWhereInput = {};
 
   if (params.start_date || params.end_date) {
@@ -573,7 +574,7 @@ function daysBefore(days: number) {
   return date;
 }
 
-function describeSalesFilters(params: QuerySalesInput) {
+function describeSalesFilters(params: NormalizedQuerySalesInput) {
   return {
     startDate: params.start_date?.toISOString() ?? null,
     endDate: params.end_date?.toISOString() ?? null,

@@ -21,7 +21,7 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
 }
 
 button,
@@ -31,4 +31,139 @@ input {
 
 ::selection {
   background: #c8f2d8;
+}
+
+:root {
+  --shadow-resting: 0 1px 2px rgb(23 33 27 / 0.06);
+  --shadow-hover: 0 10px 24px rgb(23 33 27 / 0.1);
+}
+
+.shadow-resting {
+  box-shadow: var(--shadow-resting);
+}
+
+.hover-lift {
+  transition:
+    box-shadow 160ms ease,
+    transform 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease;
+}
+
+.hover-lift:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-1px);
+}
+
+.brief-card-in {
+  animation: fade-slide-in 420ms ease both;
+}
+
+.evidence-chip {
+  animation: chip-in 180ms ease both;
+}
+
+.stream-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.12em;
+  background: currentColor;
+  animation: caret-blink 900ms steps(2, start) infinite;
+}
+
+.shimmer-line,
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+  background: #e9eee8;
+}
+
+.shimmer-line::after,
+.skeleton-shimmer::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 0.74),
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: shimmer 1300ms ease-in-out infinite;
+}
+
+.spin-icon {
+  animation: spin 800ms linear infinite;
+}
+
+.action-button[aria-pressed="true"] {
+  transform: translateY(1px);
+}
+
+@keyframes fade-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes chip-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes caret-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+
+  46%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .hover-lift:hover,
+  .action-button[aria-pressed="true"] {
+    transform: none;
+  }
 }

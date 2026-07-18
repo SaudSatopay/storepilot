@@ -39,7 +39,7 @@ const chatRequestSchema = z.object({
       }),
     )
     .min(1)
-    .max(12),
+    .max(24),
 });
 
 const systemPrompt = [
@@ -77,13 +77,15 @@ export async function POST(request: Request) {
       };
 
       try {
+        const recentMessages = parsed.data.messages.slice(-12);
+
         if (!hasUsableOpenAIKey()) {
-          await runLocalGroundedFallback(parsed.data.messages, send);
+          await runLocalGroundedFallback(recentMessages, send);
           send({ type: "done", fallback: true });
           return;
         }
 
-        await runOpenAIChat(parsed.data.messages, send);
+        await runOpenAIChat(recentMessages, send);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Chat failed.";
         send({ type: "error", message });
@@ -342,10 +344,10 @@ async function emitText(
   text: string,
   send: (event: ChatStreamEvent) => void,
 ) {
-  const chunks = text.match(/.{1,28}(\s|$)/g) ?? [text];
+  const chunkSize = 28;
 
-  for (const chunk of chunks) {
-    send({ type: "delta", text: chunk });
+  for (let index = 0; index < text.length; index += chunkSize) {
+    send({ type: "delta", text: text.slice(index, index + chunkSize) });
     await new Promise((resolve) => setTimeout(resolve, 12));
   }
 }

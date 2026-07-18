@@ -5,11 +5,18 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const storeProfiles = await prisma.storeProfile.count();
-    const suppliers = await prisma.supplier.count();
-    const products = await prisma.product.count();
-    const sales = await prisma.sale.count();
-    const stockLevels = await prisma.stockLevel.count();
+    const [storeProfiles, suppliers, products, sales, stockLevels, salesRange] =
+      await Promise.all([
+        prisma.storeProfile.count(),
+        prisma.supplier.count(),
+        prisma.product.count(),
+        prisma.sale.count(),
+        prisma.stockLevel.count(),
+        prisma.sale.aggregate({
+          _min: { soldAt: true },
+          _max: { soldAt: true },
+        }),
+      ]);
 
     return NextResponse.json({
       status: "ok",
@@ -21,6 +28,10 @@ export async function GET() {
         sales,
         stockLevels,
       },
+      salesDays: getInclusiveDaySpan(
+        salesRange._min.soldAt,
+        salesRange._max.soldAt,
+      ),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown database error";
@@ -34,4 +45,20 @@ export async function GET() {
       { status: 500 },
     );
   }
+}
+
+function getInclusiveDaySpan(start: Date | null, end: Date | null) {
+  if (!start || !end) {
+    return 0;
+  }
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const startUtc = Date.UTC(
+    start.getUTCFullYear(),
+    start.getUTCMonth(),
+    start.getUTCDate(),
+  );
+  const endUtc = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
+
+  return Math.floor((endUtc - startUtc) / dayMs) + 1;
 }

@@ -6,3 +6,4 @@
 | 2026-07-18 | Prompt 2: Schema and seed | Added Product, Supplier, Sale, and StockLevel models; created a deterministic 90-day demo electronics seed; added local PGlite Postgres dev server script and `/api/health` row counts. |
 | 2026-07-18 | Prompt 3: Tools layer | Added zod-validated server tools for sales, inventory, stockout forecasts, supplier reorder messages, and promo drafts; added Vitest coverage for forecast math. |
 | 2026-07-18 | Prompt 4: Agent chat | Wired `/api/chat` to stream StorePilot answers with GPT-5.6 tool calling, inline evidence chips, and a local demo fallback for grounded reorder advice. |
+| 2026-07-18 | Prompt 5: Bug fixes and frontend elevation | Capped chat history safely, made text streaming lossless, reduced forecast payload size, fixed inclusive sales date ranges, added live data proof, and polished the responsive operations desk UI. |

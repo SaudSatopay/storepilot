@@ -1,11 +1,12 @@
 import { z } from "zod";
 
 const stringList = z.array(z.string().min(1)).max(50);
+const dateString = z.string().min(1).max(40);
 
 export const querySalesInputSchema = z
   .object({
-    start_date: z.coerce.date().optional(),
-    end_date: z.coerce.date().optional(),
+    start_date: dateString.optional(),
+    end_date: dateString.optional(),
     product_ids: stringList.optional(),
     skus: stringList.optional(),
     categories: stringList.optional(),
@@ -14,14 +15,34 @@ export const querySalesInputSchema = z
     metric: z.enum(["revenue", "units"]).default("revenue"),
     limit: z.number().int().min(1).max(100).default(30),
   })
-  .refine(
-    (value) =>
-      !value.start_date || !value.end_date || value.start_date <= value.end_date,
-    {
-      message: "start_date must be before end_date",
-      path: ["start_date"],
-    },
-  );
+  .superRefine((value, context) => {
+    const startDate = value.start_date ? parseToolDate(value.start_date) : null;
+    const endDate = value.end_date ? parseToolDate(value.end_date) : null;
+
+    if (value.start_date && !startDate) {
+      context.addIssue({
+        code: "custom",
+        message: "start_date must be a valid date",
+        path: ["start_date"],
+      });
+    }
+
+    if (value.end_date && !endDate) {
+      context.addIssue({
+        code: "custom",
+        message: "end_date must be a valid date",
+        path: ["end_date"],
+      });
+    }
+
+    if (startDate && endDate && startDate > toEndOfUtcDay(endDate)) {
+      context.addIssue({
+        code: "custom",
+        message: "start_date must be before end_date",
+        path: ["start_date"],
+      });
+    }
+  });
 
 export const getInventoryInputSchema = z.object({
   product_ids: stringList.optional(),
@@ -59,3 +80,35 @@ export type ComposeSupplierMessageInput = z.infer<
   typeof composeSupplierMessageInputSchema
 >;
 export type DraftPromoInput = z.infer<typeof draftPromoInputSchema>;
+
+export type NormalizedQuerySalesInput = Omit<
+  QuerySalesInput,
+  "start_date" | "end_date"
+> & {
+  start_date?: Date;
+  end_date?: Date;
+};
+
+export function normalizeQuerySalesInput(
+  input: QuerySalesInput,
+): NormalizedQuerySalesInput {
+  const startDate = input.start_date ? parseToolDate(input.start_date) : null;
+  const endDate = input.end_date ? parseToolDate(input.end_date) : null;
+
+  return {
+    ...input,
+    start_date: startDate ?? undefined,
+    end_date: endDate ? toEndOfUtcDay(endDate) : undefined,
+  };
+}
+
+function parseToolDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function toEndOfUtcDay(date: Date) {
+  const endDate = new Date(date);
+  endDate.setUTCHours(23, 59, 59, 999);
+  return endDate;
+}
