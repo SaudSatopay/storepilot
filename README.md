@@ -35,3 +35,7 @@ The server-side tools live in `lib/tools`: `query_sales`, `get_inventory`, `fore
 ```bash
 pnpm test
 ```
+
+## Agent Chat
+
+`/api/chat` accepts chat messages, calls StorePilot tools through the OpenAI Responses API, streams answer deltas as NDJSON, and emits evidence chips for the numbers behind each recommendation. If `OPENAI_API_KEY` is unset or still a placeholder, the route uses seeded demo data so `What should I reorder this week?` stays testable offline.

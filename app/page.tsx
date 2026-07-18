@@ -1,3 +1,6 @@
+"use client";
+
+import { FormEvent, useState } from "react";
 import {
   ArrowUpRight,
   CircleAlert,
@@ -23,6 +26,19 @@ type ChatMessage = {
   role: "manager" | "pilot";
   body: string;
 };
+
+type EvidenceGroup = {
+  toolName: string;
+  label: string;
+  chips: string[];
+};
+
+type ChatStreamEvent =
+  | { type: "status"; message: string }
+  | { type: "evidence"; toolName: string; label: string; chips: string[] }
+  | { type: "delta"; text: string }
+  | { type: "done"; fallback?: boolean }
+  | { type: "error"; message: string };
 
 const briefItems: BriefItem[] = [
   {
@@ -55,7 +71,7 @@ const briefItems: BriefItem[] = [
   },
 ];
 
-const messages: ChatMessage[] = [
+const initialMessages: ChatMessage[] = [
   {
     role: "manager",
     body: "What needs my attention today?",
@@ -66,7 +82,7 @@ const messages: ChatMessage[] = [
   },
 ];
 
-const evidence = [
+const initialEvidence = [
   "USB-C Chargers: 14 in stock",
   "7-day velocity: 5.1 per day",
   "Accessory sales: +42% vs trend",
@@ -86,6 +102,147 @@ const typeIcons = {
 } satisfies Record<BriefItem["type"], typeof TrendingUp>;
 
 export default function Home() {
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [evidence, setEvidence] = useState<EvidenceGroup[]>([
+    {
+      toolName: "mock",
+      label: "Demo evidence",
+      chips: initialEvidence,
+    },
+  ]);
+  const [input, setInput] = useState("What should I reorder this week?");
+  const [status, setStatus] = useState<string | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const question = input.trim();
+    if (!question || isStreaming) {
+      return;
+    }
+
+    const nextMessages: ChatMessage[] = [
+      ...messages,
+      { role: "manager", body: question },
+      { role: "pilot", body: "" },
+    ];
+    setMessages(nextMessages);
+    setInput("");
+    setEvidence([]);
+    setStatus("Opening StorePilot tools");
+    setIsStreaming(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: nextMessages
+            .filter((message) => message.body.trim().length > 0)
+            .map((message) => ({
+              role: message.role === "manager" ? "user" : "assistant",
+              content: message.body,
+            })),
+        }),
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error("Chat request failed.");
+      }
+
+      await readChatStream(response.body);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "StorePilot could not answer.";
+      setStatus(message);
+      appendAssistantText(` ${message}`);
+    } finally {
+      setIsStreaming(false);
+    }
+  }
+
+  async function readChatStream(body: ReadableStream<Uint8Array>) {
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.trim()) {
+          continue;
+        }
+
+        handleStreamEvent(JSON.parse(line) as ChatStreamEvent);
+      }
+    }
+
+    if (buffer.trim()) {
+      handleStreamEvent(JSON.parse(buffer) as ChatStreamEvent);
+    }
+  }
+
+  function handleStreamEvent(event: ChatStreamEvent) {
+    if (event.type === "status") {
+      setStatus(event.message);
+      return;
+    }
+
+    if (event.type === "evidence") {
+      setEvidence((current) => [
+        ...current,
+        {
+          toolName: event.toolName,
+          label: event.label,
+          chips: event.chips,
+        },
+      ]);
+      return;
+    }
+
+    if (event.type === "delta") {
+      appendAssistantText(event.text);
+      return;
+    }
+
+    if (event.type === "error") {
+      setStatus(event.message);
+      appendAssistantText(` ${event.message}`);
+      return;
+    }
+
+    if (event.type === "done") {
+      setStatus(event.fallback ? "Answered from local demo data" : "Answer complete");
+    }
+  }
+
+  function appendAssistantText(text: string) {
+    setMessages((current) => {
+      const next = [...current];
+      const last = next[next.length - 1];
+
+      if (last?.role === "pilot") {
+        next[next.length - 1] = {
+          ...last,
+          body: `${last.body}${text}`,
+        };
+      }
+
+      return next;
+    });
+  }
+
   return (
     <main className="min-h-screen bg-[#f4f6f1] text-[#17211b]">
       <div className="mx-auto flex min-h-screen w-full max-w-[1440px] flex-col gap-4 px-4 py-4 lg:px-6">
@@ -193,28 +350,36 @@ export default function Home() {
 
             <div className="flex flex-1 flex-col justify-between gap-4 p-4">
               <div className="grid gap-3">
-                {messages.map((message) => (
+                {messages.map((message, index) => (
                   <div
                     className={`max-w-[82%] rounded-lg px-4 py-3 text-sm leading-6 ${
                       message.role === "manager"
                         ? "ml-auto bg-[#17211b] text-white"
                         : "border border-[#d7ded5] bg-[#fbfcfa] text-[#34443a]"
                     }`}
-                    key={`${message.role}-${message.body}`}
+                    key={`${message.role}-${index}`}
                   >
-                    {message.body}
+                    {message.body || "Checking the store data..."}
                   </div>
                 ))}
 
                 <div className="flex flex-wrap gap-2 pt-1">
-                  {evidence.map((chip) => (
-                    <span
-                      className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-xs font-medium text-sky-800"
-                      key={chip}
-                    >
-                      {chip}
+                  {evidence.flatMap((group) =>
+                    group.chips.map((chip) => (
+                      <span
+                        className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-xs font-medium text-sky-800"
+                        key={`${group.toolName}-${chip}`}
+                        title={group.label}
+                      >
+                        {chip}
+                      </span>
+                    )),
+                  )}
+                  {status ? (
+                    <span className="rounded-md border border-[#d7ded5] bg-[#f4f6f1] px-2.5 py-1.5 text-xs font-medium text-[#66736b]">
+                      {status}
                     </span>
-                  ))}
+                  ) : null}
                 </div>
               </div>
 
@@ -261,20 +426,24 @@ export default function Home() {
                   </article>
                 </div>
 
-                <form className="flex gap-2">
+                <form className="flex gap-2" onSubmit={handleSubmit}>
                   <label className="sr-only" htmlFor="chat-input">
                     Ask StorePilot
                   </label>
                   <input
                     className="h-11 min-w-0 flex-1 rounded-md border border-[#cfd8d2] bg-white px-3 text-sm outline-none transition placeholder:text-[#8a948d] focus:border-[#1b6b4a] focus:ring-2 focus:ring-[#bfe6d2]"
+                    disabled={isStreaming}
                     id="chat-input"
+                    onChange={(event) => setInput(event.target.value)}
                     placeholder="Ask about stock, sales, or suppliers"
                     type="text"
+                    value={input}
                   />
                   <button
-                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-[#1b6b4a] text-white transition hover:bg-[#15573c]"
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-[#1b6b4a] text-white transition hover:bg-[#15573c] disabled:cursor-not-allowed disabled:bg-[#90a399]"
+                    disabled={isStreaming}
                     title="Send message"
-                    type="button"
+                    type="submit"
                   >
                     <Send className="h-4 w-4" />
                   </button>
