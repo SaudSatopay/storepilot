@@ -6,6 +6,7 @@ import type {
   ResponseInputItem,
 } from "openai/resources/responses/responses";
 import { z } from "zod";
+import { answerLocally } from "@/lib/chat/local-answers";
 import { withDbRetry } from "@/lib/db-retry";
 import { friendlyErrorMessage, logServerError } from "@/lib/errors";
 import {
@@ -240,56 +241,25 @@ async function runLocalGroundedFallback(
   messages: ChatMessage[],
   send: (event: ChatStreamEvent) => void,
 ) {
-  const question = messages[messages.length - 1]?.content.toLowerCase() ?? "";
+  const question = messages[messages.length - 1]?.content ?? "";
 
   send({
     type: "status",
     message: "Answering from the local demo engine",
   });
 
-  if (question.includes("reorder") || question.includes("stock")) {
-    const forecast = await forecastStockouts({
-      horizon_days: 7,
-      lookback_days: 14,
-    });
-    const stockouts = "stockouts" in forecast ? forecast.stockouts.slice(0, 3) : [];
+  const answer = await answerLocally(question);
 
+  for (const group of answer.evidence) {
     send({
       type: "evidence",
-      toolName: "forecast_stockouts",
-      label: "Stockout forecast",
-      chips: evidenceChips("forecast_stockouts", forecast),
+      toolName: group.toolName,
+      label: group.label,
+      chips: group.chips,
     });
-
-    const answer =
-      stockouts.length > 0
-        ? [
-            `Reorder these first this week: ${stockouts
-              .map((item) => `${item.name} (${item.sku})`)
-              .join(", ")}.`,
-            ...stockouts.map(
-              (item) =>
-                `${item.sku}: ${item.stockQty} in stock, selling ${item.dailyVelocity}/day, about ${item.daysUntilStockout} days of cover, recommended reorder ${item.recommendedReorderQty} units.`,
-            ),
-            "These are ranked by stockout risk from the seeded demo data.",
-          ].join(" ")
-        : "I checked the 7-day stockout forecast and do not see an item running out this week.";
-
-    await emitText(answer, send);
-    return;
   }
 
-  const inventory = await getInventory({ stock_status: "low", limit: 5 });
-  send({
-    type: "evidence",
-    toolName: "get_inventory",
-    label: "Low-stock inventory",
-    chips: evidenceChips("get_inventory", inventory),
-  });
-  await emitText(
-    "I checked low-stock inventory first. Ask me what to reorder this week and I will rank the items by stockout risk, daily velocity, and current stock.",
-    send,
-  );
+  await emitText(answer.text, send);
 }
 
 function toResponseInput(messages: ChatMessage[]): ResponseInput {
