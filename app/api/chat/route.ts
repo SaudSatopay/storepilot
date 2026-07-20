@@ -91,7 +91,26 @@ export async function POST(request: Request) {
           return;
         }
 
-        await runOpenAIChat(recentMessages, send);
+        let streamedText = false;
+        const trackedSend = (event: ChatStreamEvent) => {
+          if (event.type === "delta") {
+            streamedText = true;
+          }
+
+          send(event);
+        };
+
+        try {
+          await runOpenAIChat(recentMessages, trackedSend);
+        } catch (modelError) {
+          if (streamedText) {
+            throw modelError;
+          }
+
+          logServerError("chat:model-fallback", modelError);
+          await runLocalGroundedFallback(recentMessages, send);
+          send({ type: "done", fallback: true });
+        }
       } catch (error) {
         logServerError("chat", error);
         send({
@@ -225,7 +244,7 @@ async function runLocalGroundedFallback(
 
   send({
     type: "status",
-    message: "Using local demo mode because OPENAI_API_KEY is not set",
+    message: "Answering from the local demo engine",
   });
 
   if (question.includes("reorder") || question.includes("stock")) {
