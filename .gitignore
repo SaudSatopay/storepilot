@@ -37,3 +37,6 @@ db-local*.log
 # prisma
 prisma/*.db
 prisma/*.db-journal
+
+.vercel
+.env*

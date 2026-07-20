@@ -12,6 +12,8 @@ Reads your sales and stock every morning. Tells you the three things that need d
 [![Tests](https://img.shields.io/badge/tests-14%20passing-176043)](#the-numbers-are-real)
 [![License: MIT](https://img.shields.io/badge/license-MIT-8a5b0b)](LICENSE)
 
+**Try it live: [storepilot-demo.vercel.app](https://storepilot-demo.vercel.app)** (seeded demo store, no signup)
+
 <img src="docs/screen-desk.png" alt="StorePilot: the Morning Brief and chat desk" width="900" />
 
 </div>
